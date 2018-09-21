@@ -7,19 +7,11 @@
  * of the MIT license.  See the LICENSE.txt file for details.
  */
 var avro = require("avsc");
+var axios = require('axios');
 
 var Transform = require('stream').Transform;
 
 var Kafka = require('node-rdkafka');
-
-const type = avro.Type.forSchema({
-    name: 'Cliente',
-    type: 'record',
-    fields: [
-      {name: 'id', type: 'int' },
-      {name: 'nome', type: ['null', 'string'] }
-    ]
-  });
 
 var consumer = new Kafka.KafkaConsumer({
   'metadata.broker.list': '10.2.157.115:9092',
@@ -32,22 +24,37 @@ var consumer = new Kafka.KafkaConsumer({
   //'sasl.password':'admin-password',
   });
   
-var topicName = 'laurowag';
+var topics = ['plataforma.mqtt','laurowag'];
 
 var counter = 0;
 var numMessages = 5;
 
+const axiosInstance = axios.create({
+  baseURL: '',
+  timeout: 5000,
+});
+
 consumer.on('ready', function(arg) {
     console.log('consumer ready.' + JSON.stringify(arg));
-  
-    consumer.subscribe([topicName]);
+    consumer.subscribe(topics);
     //start consuming messages
     consumer.consume();
   });
 
 consumer.on('data', function(m) {
-    var decodedMessage = type.decode(m.value); // Skip prefix.
-    console.log(decodedMessage);
+    var schemaId = m.value[4];
+    var schema = undefined;
+
+    axiosInstance.get('http://10.2.141.98:8081/schemas/ids/'+schemaId)
+    .then(response => {
+      var schemaType = avro.Type.forSchema(JSON.parse(response.data.schema));
+      var decodedMessage = schemaType.decode(m.value, 5); // Skip schema identification.
+      console.log(decodedMessage);
+    })
+    .catch(error => {      
+      console.log(error);
+    });
+
 });
 
 consumer.on('error', function(err) {
